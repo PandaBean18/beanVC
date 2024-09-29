@@ -5,11 +5,80 @@
 using namespace std;
 using namespace std::filesystem;
 
+void stageChanges()
+{
+    string currentPath = current_path().string();
+    string pathToLogs = current_path().string();
+    pathToLogs += "/.beanVC/logs";
+
+    path logs = path(pathToLogs);
+    directory_iterator logIt = directory_iterator(logs);
+    recursive_directory_iterator it = recursive_directory_iterator(current_path());
+
+    if (logIt == end(logIt))
+    {
+        // if this is the case, there are no logs, so we can directly add the contents of all the files
+        recursive_directory_iterator e = end(it);
+        int stop = 0;
+        ofstream stagingFile = ofstream(".beanVC/objects/tempStaging.bin", ios_base::out);
+        while (!stop)
+        {
+            string filename = relative(it->path()).string();
+            // cout << filename << endl;
+            if ((filename[0] == *".") && (filename != "."))
+            {
+                if (status(it->path()).type() == file_type::directory)
+                {
+                    it++;
+                    it.pop();
+                    continue;
+                }
+                it++;
+                continue;
+            }
+
+            if (filename.find_first_of(".", 1) == string::npos && (status(it->path()).type() != file_type::directory))
+            {
+                it++;
+                continue;
+            }
+
+            cout << "Adding " << filename << endl;
+
+            ifstream currentFile = ifstream(it->path().string(), ios_base::in);
+
+            stagingFile.write("--START--\n", 10);
+            stagingFile.write(filename.c_str(), filename.size());
+            stagingFile.write("\n", 1);
+
+            string line;
+
+            while(getline(currentFile, line))
+            {
+                stagingFile.write("+", 1);
+                stagingFile.write(line.c_str(), line.size());
+                stagingFile.write("\n", 1);
+            }
+            stagingFile.write("--END--\n", 8);
+            currentFile.close();
+            it++;
+
+            if (it == e)
+            {
+                stop = 1;
+            }
+        }
+        stagingFile.close();
+    }
+}
+
 void initRepo()
 {
     path pathname = current_path();
-    cout << "Initializing empty repository in " << pathname << "..." << endl;
+    cout << "Initializing empty repository in " << pathname << " ..." << endl;
     create_directory(".beanVC");
+    create_directory(".beanVC/logs");
+    create_directory(".beanVC/objects");
     return;
 }
 
@@ -25,18 +94,20 @@ void printHelpMenu()
 
 int main(int argc, char *argv[])
 {
-    //initRepo();
     if (argc == 1)
     {
         printHelpMenu();
         return 0;
     } 
-    
+
     string argument = string(argv[1]);
     
     if (argument == "init")
     {
         initRepo();
+    } else if (argument == "add")
+    {
+        stageChanges();
     }
     return 0;
 }
