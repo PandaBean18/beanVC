@@ -1,0 +1,28 @@
+1. init should create a file called .beanVC 
+2. .beanVC file should have two folders, logs and objects
+3. logs stores the log.txt file that will have commit id, commit message, and time stamp
+4. objects will store file relating to each commit. one file will be the head, making it the root node, the rest will be children
+5. at each commit, it should compare each file with the previous data. 
+
+Nomenclature:
+start of a file:
+--START--
+<filename>
+
+end of file:
+--END--
+
+Addition of a new content in the file:
++(<linecount>, <columncount>)<data>
+
+Removal of existing content:
+-(<linecount>, <columncount>)<data>
+
+Replacement of content with new content:
+will be represented by removal syntax, then addition syntax
+
+Addition of new file:
+++<filename>
+
+Removal of a file:
+--<filename>
