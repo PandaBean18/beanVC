@@ -3,6 +3,19 @@
 4. objects will store file relating to each commit. one file will be the head, making it the root node, the rest will be children
 5. at each commit, it should compare each file with the previous data. 
 
+initial commit:
+everything gets added, so while creating the file from previous commits, we can just take the initial commit and present that.
+
+commits after the initial commit:
+first we take the previos commit file and see check each added line in that (+). If, that line is still present, that is good, else
+we use some variable to indicate that this line does not exist.
+
+post this, we check all the newly added lines of previous commit. We find the lowest occurance of this line in the file currently being 
+inspected, lets call this line K. the significance of this is that all the lines that are newly added in the currently inspected file will 
+be right above the Kth line. similarly we check the second newly added line, third and so on except the lines that have been deleted.
+
+
+
 Nomenclature:
 start of a file:
 --START--
