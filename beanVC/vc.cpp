@@ -24,7 +24,7 @@ void stageChanges()
         while (!stop)
         {
             string filename = relative(it->path()).string();
-            // cout << filename << endl;
+
             if ((filename[0] == *".") && (filename != "."))
             {
                 if (status(it->path()).type() == file_type::directory)
@@ -79,6 +79,9 @@ void initRepo()
     create_directory(".beanVC");
     create_directory(".beanVC/logs");
     create_directory(".beanVC/objects");
+    ofstream lastComitVersion = ofstream(".beanVC/lastCommitVersion.txt", ios_base::out);
+    lastComitVersion.write("-1", 2);
+    lastComitVersion.close();
     return;
 }
 

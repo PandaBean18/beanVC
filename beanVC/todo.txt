@@ -1,5 +1,4 @@
-1. init should create a file called .beanVC 
-2. .beanVC file should have two folders, logs and objects
+1. there should be a file called "lastCommitVersion.txt". the initial value of this will be -1. 
 3. logs stores the log.txt file that will have commit id, commit message, and time stamp
 4. objects will store file relating to each commit. one file will be the head, making it the root node, the rest will be children
 5. at each commit, it should compare each file with the previous data. 
