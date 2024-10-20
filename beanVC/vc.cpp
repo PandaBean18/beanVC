@@ -113,6 +113,15 @@ class FileNode
         // this means that all the stuff currently goes before the EOF meaning all the stuff goes below whatever was there before.
 
         // if the order decider has a value of K, this means that this particular line goes before the Kth line from previous commit
+
+        // The previous ordering logic will not work. Ordering will require a recursive approach.
+        // Take the current line and check its orderDecider. If orderDecider is 0, append the stripped line to the end of fileContent
+        // if orderDecider is not 0, lets call it K. Let the current commit version be C. 
+        // Then, we check the Kth line of the (C-1)th commit content. this means that the current line goes above the Kth line added in 
+        // previous commit. Let the orderDecider of this line be K'. Then we check the K'th line in (C-2)th commit. This means that the Kth
+        // line in (c-1)th commit is above the K'th line (c-2)th commit. This implies that our current line will be above K'th line that
+        // that is present in (c-2)th commit. We continue going back will 
+
         ifstream lastCommitFile = ifstream(".beanVC/lastCommitVersion.txt", ios_base::in);
         char c[2];
         lastCommitFile.read(c, 2);
@@ -383,7 +392,7 @@ void addStagedChanges(string commitMessage)
 void initRepo()
 {
     path pathname = current_path();
-    cout << "Initializing empty repository in " << pathname << " ..." << endl;
+    cout << "Initializing empty repository in " << pathname << "..." << endl;
     create_directory(".beanVC");
     create_directory(".beanVC/logs");
     create_directory(".beanVC/objects");
