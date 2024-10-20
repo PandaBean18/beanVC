@@ -26,6 +26,15 @@ class UnstagedError : public exception
     }
 };
 
+class CorruptedCommitFileError : public exception
+{
+    public:
+    const char* what() const noexcept override 
+    {
+        return "The commit file was corrupted. This is an error from within the code and not a user error.\n";
+    }
+};
+
 class VersionManager 
 {
     public:
@@ -140,7 +149,6 @@ class VersionManager
                     stagingFile.write("+", 1);
                     stagingFile.write(line.c_str(), line.size());
                     stagingFile.write("\n", 1);
-                    lineCount++;
                 }
                 stagingFile.write("--END--\n", 8);
                 currentFile.close();
@@ -252,16 +260,14 @@ class VersionManager
 class LineNode 
 {
     public:
-    int lineNumber;
     string data;
     LineNode *nextLine;
 
     LineNode() {};
 
-    LineNode(string d, int n)
+    LineNode(string d)
     {
         data = string(d);
-        lineNumber = n;
         nextLine = NULL;
     }
 };
@@ -271,14 +277,183 @@ class FileNode
     public:
     string filename;
     LineNode *lines;
-    char *commitVersion;
+    char commitVersion[3];
 
-    FileNode(string f)
+    FileNode(const char* f)
     {
         // this constructor is to be used when you want the latest version of the file.
         filename = string(f);
+        lines = NULL;
         char c[2];
         VersionManager::findLatestCommitVersion(c);
+        commitVersion[0] = c[0];
+        commitVersion[1] = c[1];
+        commitVersion[2] = '\0';
+        int cv = VersionManager::convertCharToInt(commitVersion);
+        
+        int i = 0;
+
+        while (i <= cv)
+        {
+            string p = current_path().string();
+
+            p += "/.beanVC/objects/";
+
+            if (i < 10)
+            {
+                p.push_back('0');
+            }
+
+            p += to_string(i);
+            p += ".bin";
+
+            ifstream file = ifstream(p, ios_base::in);
+            vector<string> currentCommitContent;
+            string line;
+            
+            while (getline(file, line))
+            {
+                currentCommitContent.push_back(line);
+            }
+
+            file.close();
+            merge(currentCommitContent);
+            i++;
+        }
+    }
+
+    void data(string &writer)
+    {
+        LineNode *current = lines;
+
+        while(current != NULL)
+        {
+            writer += current->data;
+            current = current->nextLine;
+            writer.push_back('\n');
+        }
+
+        return;
+    }
+
+    void merge(vector<string> commitContent)
+    {
+        // this function takes the commit content and then merges it into the lines variable
+        // it first checks the commitContent for all the deleted lines and then removes them from the lines linked list
+        // once this is done, for all the newly added lines, we check the orderDecider. This gives us the line number above which it is 
+        // supposed to be inserted at.
+
+        int fileStartIndex = -1;
+        int fileEndIndex = -1;
+
+        for(int i = 0; i < commitContent.size(); i++)
+        {
+            if (commitContent[i] == "--START--")
+            {
+                if (commitContent[i+1] == filename)
+                {
+                    fileStartIndex = i+2;
+                }
+            }
+
+            if ((commitContent[i] == "--END--") && (fileStartIndex != -1))
+            {
+                fileEndIndex = i-1;
+                break;
+            }
+        }
+
+        if (fileStartIndex == -1)
+        {  
+            // if this is the case, then our file does not exist in this commit.
+            return;
+        }
+
+        if (fileEndIndex == -1)
+        {
+            // if this is the case, we did find the file, but not where the files ends.
+            throw CorruptedCommitFileError();
+        }
+
+
+        for(int i = fileStartIndex; i <= fileEndIndex; i++)
+        {
+            int index = (int)(commitContent[i].find_first_of(')'));
+            index++;
+            if (commitContent[i][index] == '+')
+            {
+                continue;
+            }
+            string trimmedString;
+            trim(commitContent[i], trimmedString);
+
+            LineNode *current = lines;
+            LineNode *prev = NULL;
+
+            while (current != NULL)
+            {
+                if (current->data == trimmedString)
+                {
+                    if (prev == NULL)
+                    {
+                        lines = lines->nextLine;
+                    } else {
+                        prev->nextLine = current->nextLine;
+                    }
+                    break;
+                }
+                prev = current;
+                current = current->nextLine;
+            }
+        }
+
+
+        for(int i = fileStartIndex; i <= fileEndIndex; i++)
+        {
+            int j = 0;
+            string trimmedLine;
+            string refLineString = commitContent[i].substr(commitContent[i].find_first_of('(')+1, commitContent[i].find_first_of(')')-1);
+            int refLine = VersionManager::convertCharToInt(refLineString.c_str());
+
+            trim(commitContent[i], trimmedLine);
+
+            if (refLine == 0)
+            {
+                // we insert the trimmed line at the end;
+
+                LineNode *temp = new LineNode(trimmedLine); 
+                
+                if (lines == NULL)
+                {
+                    cout << "This was fine" << endl;
+                    lines = temp;
+                    continue;
+                }
+
+                LineNode *current = lines;
+
+                while (current->nextLine != NULL)
+                {
+                    current = current->nextLine;
+                }
+
+                current->nextLine = temp;
+            }
+        }
+
+    }
+
+    static void trim(string s, string &writeString)
+    {
+        int startIndex  = (int)(s.find_first_of(')'));
+        startIndex += 2;
+
+        for(string::iterator it = s.begin()+startIndex; it != s.end(); it++)
+        {
+            writeString.push_back(*it);
+        }
+
+        return;
     }
 };
 
@@ -296,6 +471,15 @@ int main(int argc, char *argv[])
     {
         string message = argv[2];
         VersionManager::commitStagedChanges(message);
+    } else if (argument == "show")
+    {
+        string d;
+        cout << "lol";
+        FileNode f = FileNode("todo.txt");
+        
+        f.data(d);
+
+        cout << d << endl;
     }
     return 0;
 }
