@@ -410,7 +410,6 @@ class FileNode
 
         for(int i = fileStartIndex; i <= fileEndIndex; i++)
         {
-            int j = 0;
             string trimmedLine;
             string refLineString = commitContent[i].substr(commitContent[i].find_first_of('(')+1, commitContent[i].find_first_of(')')-1);
             int refLine = VersionManager::convertCharToInt(refLineString.c_str());
@@ -425,7 +424,6 @@ class FileNode
                 
                 if (lines == NULL)
                 {
-                    cout << "This was fine" << endl;
                     lines = temp;
                     continue;
                 }
@@ -438,6 +436,27 @@ class FileNode
                 }
 
                 current->nextLine = temp;
+            } else {
+                int j = 1;
+                LineNode *current = lines;
+                LineNode *prev = NULL;
+                LineNode *temp = new LineNode(trimmedLine);
+
+                while (j < refLine)
+                {
+                    prev = current;
+                    current = current->nextLine;
+                }
+
+                if (prev == NULL)
+                {
+                    temp->nextLine = lines;
+                    lines = temp;
+                    continue;
+                }
+
+                temp->nextLine = current;
+                prev->nextLine = temp;
             }
         }
 
@@ -474,7 +493,6 @@ int main(int argc, char *argv[])
     } else if (argument == "show")
     {
         string d;
-        cout << "lol";
         FileNode f = FileNode("todo.txt");
         
         f.data(d);
