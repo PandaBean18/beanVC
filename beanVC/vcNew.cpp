@@ -5,6 +5,8 @@
 #include <filesystem>
 #include <fstream>
 
+#include "versionManager.h"
+
 using namespace std;
 using namespace std::filesystem;
 
@@ -35,225 +37,12 @@ class CorruptedCommitFileError : public exception
     }
 };
 
-class VersionManager 
+class MissingCommitMessageError : public exception 
 {
     public:
-    static void findLatestCommitVersion(char* c)
+    const char* what() const noexcept override 
     {
-        string path = current_path().string();
-        path += "/.beanVC/lastCommitVersion.txt";
-        ifstream lastCommitVersionFile = ifstream(path, ios_base::in);
-
-        if (!lastCommitVersionFile.is_open())
-        {
-            throw UninitializedError();
-        }
-
-        lastCommitVersionFile.read(c, 2);
-        lastCommitVersionFile.close();
-        return;
-    }
-
-    static int convertCharToInt(const char* c)
-    {
-        if ((*c == '-') && (*(c+1) == '1')) {
-            return -1;
-        }
-
-        const char nums[] = "0123456789";
-        int val = 0;
-
-        while(*c != '\0') 
-        {
-            int i = 0;
-
-            for(i; nums[i] != '\0'; i++) {
-                if (nums[i] == *c) {
-                    break;
-                }
-            }
-
-            val = val*10;
-            val += i;
-            c++;
-        }
-
-        return val;
-    }
-
-    static void initialize()
-    {
-        path pathname = current_path();
-        cout << "Initializing empty repository in " << pathname << "..." << endl;
-        create_directory(".beanVC");
-        create_directory(".beanVC/logs");
-        create_directory(".beanVC/objects");
-        ofstream lastComitVersion = ofstream(".beanVC/lastCommitVersion.txt", ios_base::out);
-        lastComitVersion.write("-1", 2);
-        lastComitVersion.close();
-    return;
-    }
-
-    static void stageChanges()
-    {
-        char c[2];
-        findLatestCommitVersion(c);
-        int commitVersion = convertCharToInt(c);
-        recursive_directory_iterator it = recursive_directory_iterator(current_path());
-
-        if (commitVersion == -1)
-        {
-            // no commits have been made yet.
-            recursive_directory_iterator e = end(it);
-            int stop = 0;
-            ofstream stagingFile = ofstream(".beanVC/objects/tempStaging.bin", ios_base::out);
-
-            while (!stop)
-            {
-                string filename = relative(it->path()).string();
-
-                if ((filename[0] == *".") && (filename != "."))
-                {
-                    if (status(it->path()).type() == file_type::directory)
-                    {
-                        it++;
-                        it.pop();
-                        continue;
-                    }
-                    it++;
-                    continue;
-                }
-
-                if (filename.find_first_of(".", 1) == string::npos && (status(it->path()).type() != file_type::directory))
-                {
-                    it++;
-                    continue;
-                }
-
-                cout << "Adding " << filename << endl;
-
-                ifstream currentFile = ifstream(it->path().string(), ios_base::in);
-
-                stagingFile.write("--START--\n", 10);
-                stagingFile.write(filename.c_str(), filename.size());
-                stagingFile.write("\n", 1);
-
-                string line;
-                int lineCount = 0;
-                while(getline(currentFile, line))
-                {
-                    string lc = to_string(lineCount);
-                    lc.push_back(')');
-                    stagingFile.write("(", 1);
-                    stagingFile.write(lc.c_str(), lc.size());
-                    stagingFile.write("+", 1);
-                    stagingFile.write(line.c_str(), line.size());
-                    stagingFile.write("\n", 1);
-                }
-                stagingFile.write("--END--\n", 8);
-                currentFile.close();
-
-                it++;
-
-                if (it == e)
-                {
-                    stop = 1;
-                }
-            }
-        }
-    }
-
-    static void commitStagedChanges(string commitMessage)
-    {
-        string p = current_path().string();
-        p += "/.beanVC/objects/tempStaging.bin";
-        ifstream tempStagingFile = ifstream(p.c_str(), ios_base::in);
-    
-        if (!tempStagingFile.is_open()) {
-            throw UnstagedError();
-        }
-
-        char c[2];
-        findLatestCommitVersion(c);
-        int commitVersion = convertCharToInt(c)+1;
-
-        ofstream stagingFile;
-
-        if (commitVersion < 10)
-        {
-            string s = current_path().string();
-            s += "/.beanVC/objects/0";
-            s += to_string(commitVersion);
-            s += ".bin";
-            stagingFile = ofstream(s, ios_base::out);
-        } else {
-            string s = current_path().string();
-            s += "/.beanVC/objects/";
-            s += to_string(commitVersion);
-            s += ".bin";
-            stagingFile = ofstream(s, ios_base::out);
-        }
-
-        string line;
-
-        while(getline(tempStagingFile, line))
-        {
-            stagingFile.write(line.c_str(), line.size());
-            stagingFile.write("\n", 1);
-        }
-
-        stagingFile.close();
-        tempStagingFile.close();
-
-        path tempFilePath = path(p);
-        remove(tempFilePath);
-        incrementCommitVersion();
-
-        string logPathString = current_path().string();
-        logPathString += "/.beanVC/logs/";
-
-        if (commitVersion < 10)
-        {
-            logPathString.push_back('0');
-        }
-
-        logPathString += to_string(commitVersion);
-        logPathString += "_log.txt";
-
-        time_t timestamp = time(0);
-        string t = to_string(timestamp);
-
-        ofstream logFile = ofstream(logPathString, ios_base::out);
-        logFile.write(t.c_str(), t.size());
-        logFile.write("\n", 1);
-        logFile.write(commitMessage.c_str(), commitMessage.size());
-
-        logFile.close();
-    }
-
-    private:
-
-    static void incrementCommitVersion()
-    {
-        char c[2];
-        findLatestCommitVersion(c);
-        int commitVersion = convertCharToInt(c)+1;
-        string path = current_path().string();
-        path += "/.beanVC/lastCommitVersion.txt";
-
-        ofstream lastCommitVersionFile = ofstream(path.c_str(), ios_base::out);
-
-        if (commitVersion < 10)
-        {
-            lastCommitVersionFile.write("0", 1);
-        }
-
-        string cv = to_string(commitVersion);
-
-        lastCommitVersionFile.write(cv.c_str(), cv.size());
-
-        lastCommitVersionFile.close();
-        return;
+        return "A commit message is required";
     }
 };
 
@@ -377,7 +166,8 @@ class FileNode
 
 
         for(int i = fileStartIndex; i <= fileEndIndex; i++)
-        {
+        {   
+            // code for deleting a line from the file
             int index = (int)(commitContent[i].find_first_of(')'));
             index++;
             if (commitContent[i][index] == '+')
@@ -410,6 +200,14 @@ class FileNode
 
         for(int i = fileStartIndex; i <= fileEndIndex; i++)
         {
+            // code for adding lines
+            int index = (int)(commitContent[i].find_first_of(')'));
+            index++;
+            if (commitContent[i][index] == '-')
+            {
+                continue;
+            }
+
             string trimmedLine;
             string refLineString = commitContent[i].substr(commitContent[i].find_first_of('(')+1, commitContent[i].find_first_of(')')-1);
             int refLine = VersionManager::convertCharToInt(refLineString.c_str());
@@ -436,6 +234,11 @@ class FileNode
                 }
 
                 current->nextLine = temp;
+            } else if (refLine == -1) {
+                LineNode *temp = new LineNode(trimmedLine);
+
+                temp->nextLine = lines;
+                lines = temp;
             } else {
                 int j = 1;
                 LineNode *current = lines;
@@ -476,6 +279,375 @@ class FileNode
     }
 };
 
+
+void VersionManager::findLatestCommitVersion(char* c)
+{
+    string path = current_path().string();
+    path += "/.beanVC/lastCommitVersion.txt";
+    ifstream lastCommitVersionFile = ifstream(path, ios_base::in);
+
+    if (!lastCommitVersionFile.is_open())
+    {
+        throw UninitializedError();
+    }
+
+    lastCommitVersionFile.read(c, 2);
+    lastCommitVersionFile.close();
+    return;
+}
+
+int VersionManager::convertCharToInt(const char* c)
+{
+    if ((*c == '-') && (*(c+1) == '1')) {
+        return -1;
+    }
+
+    const char nums[] = "0123456789";
+    int val = 0;
+
+    while(*c != '\0') 
+    {
+        int i = 0;
+
+        for(i; nums[i] != '\0'; i++) {
+            if (nums[i] == *c) {
+                break;
+            }
+        }
+
+        val = val*10;
+        val += i;
+        c++;
+    }
+
+    return val;
+}
+
+void VersionManager::initialize()
+{
+    path pathname = current_path();
+    cout << "Initializing empty repository in " << pathname << "..." << endl;
+    create_directory(".beanVC");
+    create_directory(".beanVC/logs");
+    create_directory(".beanVC/objects");
+    ofstream lastComitVersion = ofstream(".beanVC/lastCommitVersion.txt", ios_base::out);
+    lastComitVersion.write("-1", 2);
+    lastComitVersion.close();
+return;
+}
+
+void VersionManager::stageChanges()
+{
+    char c[2];
+    findLatestCommitVersion(c);
+    int commitVersion = convertCharToInt(c);
+    recursive_directory_iterator it = recursive_directory_iterator(current_path());
+
+    if (commitVersion == -1)
+    {
+        // no commits have been made yet.
+        recursive_directory_iterator e = end(it);
+        int stop = 0;
+        ofstream stagingFile = ofstream(".beanVC/objects/tempStaging.bin", ios_base::out);
+
+        while (!stop)
+        {
+            string filename = relative(it->path()).string();
+
+            if ((filename[0] == *".") && (filename != "."))
+            {
+                if (status(it->path()).type() == file_type::directory)
+                {
+                    it++;
+                    it.pop();
+                    continue;
+                }
+                it++;
+                continue;
+            }
+
+            if (filename.find_first_of(".", 1) == string::npos && (status(it->path()).type() != file_type::directory))
+            {
+                it++;
+                continue;
+            }
+
+            cout << "Adding " << filename << endl;
+
+            ifstream currentFile = ifstream(it->path().string(), ios_base::in);
+
+            stagingFile.write("--START--\n", 10);
+            stagingFile.write(filename.c_str(), filename.size());
+            stagingFile.write("\n", 1);
+
+            string line;
+            int lineCount = 0;
+            while(getline(currentFile, line))
+            {
+                string lc = to_string(lineCount);
+                lc.push_back(')');
+                stagingFile.write("(", 1);
+                stagingFile.write(lc.c_str(), lc.size());
+                stagingFile.write("+", 1);
+                stagingFile.write(line.c_str(), line.size());
+                stagingFile.write("\n", 1);
+            }
+            stagingFile.write("--END--\n", 8);
+            currentFile.close();
+
+            it++;
+
+            if (it == e)
+            {
+                stop = 1;
+            }
+        }
+    } else {
+        // if it is not the first commit then we take the file name and create a fileNode of that file
+        // first we find the deleted lines, we do this by checking each line in the fileNode and then see if they are present in 
+        // in the current file. if they arent we put them in the temp staging file with a -
+
+        // then we check each line in the file and see if it is present in the file node. If not, then it is a new line. In this case, 
+        // we search for a line above this line that is closest to this line and present in the fileNode. the index of this file will be
+        // the order decider for the newly added line.
+        recursive_directory_iterator e = end(it);
+        int stop = 0;
+        ofstream stagingFile = ofstream(".beanVC/objects/tempStaging.bin", ios_base::out);
+
+        while (!stop)
+        {
+            string filename = relative(it->path()).string();
+
+            if ((filename[0] == *".") && (filename != "."))
+            {
+                if (status(it->path()).type() == file_type::directory)
+                {
+                    it++;
+                    it.pop();
+                    continue;
+                }
+                it++;
+                continue;
+            }
+
+            if (filename.find_first_of(".", 1) == string::npos && (status(it->path()).type() != file_type::directory))
+            {
+                it++;
+                continue;
+            }
+
+            cout << "Adding Contents of " << filename << endl;
+
+            FileNode fileTillPreviousCommit = FileNode(filename.c_str());
+
+            if (fileTillPreviousCommit.lines == NULL)
+            {
+                // if this is the case then this file is newly added
+                ifstream currentFile = ifstream(it->path().string(), ios_base::in);
+
+                stagingFile.write("--START--\n", 10);
+                stagingFile.write(filename.c_str(), filename.size());
+                stagingFile.write("\n", 1);
+                string line;
+                int lineCount = 0;
+                while(getline(currentFile, line))
+                {
+                    string lc = to_string(lineCount);
+                    lc.push_back(')');
+                    stagingFile.write("(", 1);
+                    stagingFile.write(lc.c_str(), lc.size());
+                    stagingFile.write("+", 1);
+                    stagingFile.write(line.c_str(), line.size());
+                    stagingFile.write("\n", 1);
+                }
+                stagingFile.write("--END--\n", 8);
+                currentFile.close();
+            } else {
+                // first we find the lines that have been deleted.
+                LineNode *current = fileTillPreviousCommit.lines;  
+                int i = 1;
+                
+                stagingFile.write("--START--\n", 10);
+                stagingFile.write(filename.c_str(), filename.size());
+                stagingFile.write("\n", 1);
+
+                while (current != NULL)
+                {
+                    string sentence = current->data;
+                    ifstream currentFile = ifstream(filename.c_str(), ios_base::in);
+                    string line;
+                    int isDeleted = 1;
+                    while (getline(currentFile, line)) 
+                    {
+                        if (line == sentence)
+                        {
+                            currentFile.close();
+                            isDeleted = 0;
+                            break;
+                        }
+                    }
+
+                    currentFile.close();
+
+                    if (isDeleted)
+                    {
+                        stagingFile.write("(", 1);
+                        stagingFile.write(to_string(i).c_str(), to_string(i).size());
+                        stagingFile.write(")", 1);
+                        stagingFile.write("-", 1);
+                        stagingFile.write(sentence.c_str(), sentence.size());
+                    }
+
+                    current = current->nextLine;
+                    i++;
+                }
+
+                // now that the deleted lines have been added, we check the newly added lines
+                // for this we do the opposite of what we did for deleting
+                // we check each line of the file and then check if that exists in fileNode
+                // if it does, we dont do anything, if it doesnt, then we find store it in staging file with the order decider as 
+                // the nearest line to it that exists in the fileNode
+
+                ifstream currentFile = ifstream(filename.c_str(), ios_base::in);
+                string line;
+                int lastMatchIndex = -1; // this variable stores the line number of last line that was matched in prev commit.
+
+                while (getline(currentFile, line))
+                {
+                    int isNewLine = 1;
+
+                    LineNode *current = fileTillPreviousCommit.lines;
+                    int i = 1;
+                    while (current != NULL)
+                    {
+                        if (current->data == line && (i >= lastMatchIndex))
+                        {
+                            lastMatchIndex = i;
+                            isNewLine = 0;
+                            break;
+                        }
+                        i++;
+                        current = current->nextLine;
+                    }
+
+                    if (isNewLine)
+                    {
+                        // if it is new line, we find the index of the last match and then save it in staging file.
+                        stagingFile.write("(", 1);
+                        stagingFile.write(to_string(lastMatchIndex).c_str(), to_string(lastMatchIndex).size());
+                        stagingFile.write(")", 1);
+                        stagingFile.write("+", 1);
+                        stagingFile.write(line.c_str(), line.size());
+                    }
+                }
+
+                stagingFile.write("--END--\n", 8);
+            }
+
+
+            it++;
+            if (it == e)
+            {
+                stop = 1;
+            }
+        }
+
+    }
+}
+
+void VersionManager::commitStagedChanges(const char* m)
+{
+    string commitMessage = string(m);
+    string p = current_path().string();
+    p += "/.beanVC/objects/tempStaging.bin";
+    ifstream tempStagingFile = ifstream(p.c_str(), ios_base::in);
+
+    if (!tempStagingFile.is_open()) {
+        throw UnstagedError();
+    }
+
+    char c[2];
+    findLatestCommitVersion(c);
+    int commitVersion = convertCharToInt(c)+1;
+
+    ofstream stagingFile;
+
+    if (commitVersion < 10)
+    {
+        string s = current_path().string();
+        s += "/.beanVC/objects/0";
+        s += to_string(commitVersion);
+        s += ".bin";
+        stagingFile = ofstream(s, ios_base::out);
+    } else {
+        string s = current_path().string();
+        s += "/.beanVC/objects/";
+        s += to_string(commitVersion);
+        s += ".bin";
+        stagingFile = ofstream(s, ios_base::out);
+    }
+
+    string line;
+
+    while(getline(tempStagingFile, line))
+    {
+        stagingFile.write(line.c_str(), line.size());
+        stagingFile.write("\n", 1);
+    }
+
+    stagingFile.close();
+    tempStagingFile.close();
+
+    path tempFilePath = path(p);
+    remove(tempFilePath);
+    incrementCommitVersion();
+
+    string logPathString = current_path().string();
+    logPathString += "/.beanVC/logs/";
+
+    if (commitVersion < 10)
+    {
+        logPathString.push_back('0');
+    }
+
+    logPathString += to_string(commitVersion);
+    logPathString += "_log.txt";
+
+    time_t timestamp = time(0);
+    string t = to_string(timestamp);
+
+    ofstream logFile = ofstream(logPathString, ios_base::out);
+    logFile.write(t.c_str(), t.size());
+    logFile.write("\n", 1);
+    logFile.write(commitMessage.c_str(), commitMessage.size());
+
+    logFile.close();
+}
+
+void VersionManager::incrementCommitVersion()
+{
+    char c[2];
+    findLatestCommitVersion(c);
+    int commitVersion = convertCharToInt(c)+1;
+    string path = current_path().string();
+    path += "/.beanVC/lastCommitVersion.txt";
+
+    ofstream lastCommitVersionFile = ofstream(path.c_str(), ios_base::out);
+
+    if (commitVersion < 10)
+    {
+        lastCommitVersionFile.write("0", 1);
+    }
+
+    string cv = to_string(commitVersion);
+
+    lastCommitVersionFile.write(cv.c_str(), cv.size());
+
+    lastCommitVersionFile.close();
+    return;
+}
+
+
 int main(int argc, char *argv[])
 {
     string argument = string(argv[1]);
@@ -488,7 +660,11 @@ int main(int argc, char *argv[])
         VersionManager::stageChanges();
     } else if (argument == "commit")
     {
-        string message = argv[2];
+        char* message = argv[2];
+        if (message == NULL)
+        {
+            throw MissingCommitMessageError();
+        }
         VersionManager::commitStagedChanges(message);
     } else if (argument == "show")
     {
