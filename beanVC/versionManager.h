@@ -4,6 +4,7 @@
 #include <string>
 
 class FileNode;
+class LineNode;
 
 class VersionManager {
     public:
@@ -16,6 +17,7 @@ class VersionManager {
 
     private:
     static void incrementCommitVersion();
+    static int checkDuplicatedNewLine(LineNode*, const char*, int);
 };
 
 #endif

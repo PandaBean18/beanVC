@@ -1,5 +1,14 @@
-HELLOOOOOOOOO
-how is it going 
-this is a test to see how it works 
-cmon cmon cmon cmon 
-changed line
+#include <iostream>
+
+using namespace std;
+
+int add(int a, int b)
+{
+    return (a+b);
+}
+
+int main()
+{
+    cout << "hello world" << endl;
+    return 0;
+}

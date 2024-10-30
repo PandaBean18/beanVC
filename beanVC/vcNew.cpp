@@ -396,7 +396,56 @@ void VersionManager::initialize()
     ofstream lastComitVersion = ofstream(".beanVC/lastCommitVersion.txt", ios_base::out);
     lastComitVersion.write("-1", 2);
     lastComitVersion.close();
-return;
+    return;
+}
+
+int VersionManager::checkDuplicatedNewLine(LineNode* node, const char* filename, int lineNumber)
+{
+    // we start at the start of the file, set i to 1 and keep checking all the lines till i == lineNumber
+    // if even one of the lines do not match, then it is a duplicated new line, ie a new line that gave a false positive due it being
+    // duplicated.
+    // return 1 if it is a new line
+    // return 0 if it is not a new line
+    int isTestFile = 0;
+    if (string(filename) == string("test.txt"))
+    {
+        cout << endl << endl << lineNumber << endl;
+        isTestFile = 1;
+    }
+
+    int i = 1;
+    string line;
+    LineNode *current = node;
+    ifstream file = ifstream(filename, ios_base::in);
+    while (i <= lineNumber)
+    {
+        getline(file, line);
+        if (isTestFile)
+        {
+            cout << "In FileNode: " << current->data << endl;
+            cout << "In file:" << line << endl;
+        }
+        if (line != current->data) 
+        {
+            // if (isTestFile)
+            // {
+            //     LineNode *c = node;
+            //     while (c != NULL)
+            //     {
+            //         cout << c->data << endl;
+            //         c = c->nextLine;
+            //     }
+            //     cout << "-----" << endl;
+            // }
+            file.close();
+            return i;
+        }
+        i++;
+        current = current->nextLine;
+    }
+
+    file.close();
+    return 0;
 }
 
 void VersionManager::stageChanges()
@@ -582,10 +631,46 @@ void VersionManager::stageChanges()
                 // if it does, we dont do anything, if it doesnt, then we find store it in staging file with the order decider as 
                 // the nearest line to it that exists in the fileNode
 
+                // UPDATED APPROACH
+                // if a line is repeated, we need to ensure that the program is able to figure out that the line is still newly inserted
+                // for this we do this:
+                // if a line is non-repeating and is a new line (ie this line does not exist in fileNode.lines) then we flag it as new line
+                // put it in our staging file. Once that is done, we update the fileNode and add the newly inserted line.
+
+                // If a line IS repeating, we need to ensure that the match that we find of the line in fileNode is actually the current
+                // line and not some other line much much below the current line. 
+                // to ensure this, once a match is found in fileNode for the current line, we check both fileNode AND current file from 
+                // the start till that point and ensure that all the lines match. as we are deleting and adding the lines simultaneously
+                // in fileNode, they should match. If they dont then that means that we overshot while searching and that it is incfact
+                // a newly inserted line.
+
+                // example:
+                // fileNode          file currently
+                // A                 A
+                // D                 E
+                // E                 D
+                //                   E
+                // Here the E is duplicated 
+                // When our code reaches the first E in file, it will check and see if this line exists in fileNode. 
+                // This will be true as E exists at the end of fileNode.
+                // However this is a newly added line, so we compare contents of fileNode and of file till the matched E of fileNode
+                // we see that the contents dont match (AD vs AE)
+                // so we know that this is a new line
+                // once we know that it is a new line, we add it to fileNode
+                // fileNode          file currently
+                // A                 A
+                // E                 E
+                // D                 D
+                // E                 E
+
+                // Once our code reaches the second E, it recompares the files and finds no inconsisties 
+                // This works because we are going top to bottom. If a new line is encountered, we add it to the fileNode hence
+                // when we move to the next line, the previous lines of both fileNode and of file currently will match
+                // same is true for deleted lines.
+
                 ifstream currentFile = ifstream(filename.c_str(), ios_base::in);
                 string line;
                 int lastMatchIndex = -1; // this variable stores the line number of last line that was matched in prev commit.
-
                 while (getline(currentFile, line))
                 {
                     int isNewLine = 1;
@@ -594,10 +679,24 @@ void VersionManager::stageChanges()
                     int i = 1;
                     while (current != NULL)
                     {
-                        if (current->data == line && (i >= lastMatchIndex))
+                        if (current->data == line && (i > lastMatchIndex))
                         {
-                            lastMatchIndex = i;
-                            isNewLine = 0;
+                            int a = checkDuplicatedNewLine(fileTillPreviousCommit.lines, filename.c_str(), i);
+                            if (filename == "test.txt") {
+                                // cout << endl;
+                                // cout << line << endl;
+                                // cout << "i: " << i << endl;
+                                // cout << "lastMatchIndex: " << lastMatchIndex << endl;
+                                // cout << endl;
+                            }
+                            if (!a)
+                            {
+                                lastMatchIndex = i;
+                                isNewLine = 0;
+                            } else 
+                            {
+                                lastMatchIndex = a-1;
+                            }
                             break;
                         }
                         i++;
@@ -613,6 +712,30 @@ void VersionManager::stageChanges()
                         stagingFile.write("+", 1);
                         stagingFile.write(line.c_str(), line.size());
                         stagingFile.write("\n", 1);
+
+                        LineNode *current = fileTillPreviousCommit.lines;
+                        int count = 1;
+                        while (current != NULL)
+                        {
+                            if (count == lastMatchIndex)
+                            {
+                                LineNode *temp = new LineNode(line);
+                                temp->nextLine = current->nextLine;
+                                current->nextLine = temp;
+                                break;
+                            }
+                            current = current->nextLine;
+                            count++;
+                        }
+
+                        // current = fileTillPreviousCommit.lines;
+                        // while(current != NULL)
+                        // {
+                        //     cout << current->data << endl;
+                        //     current = current->nextLine;
+                        // }
+                        // //exit(0);
+                        lastMatchIndex++;
                     }
                 }
 
