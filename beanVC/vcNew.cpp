@@ -4,6 +4,7 @@
 #include <ctime>
 #include <filesystem>
 #include <fstream>
+#include <map>
 
 #include "versionManager.h"
 
@@ -111,6 +112,47 @@ class FileNode
         }
     }
 
+    FileNode(const char* f, const char* c)
+    {
+        // this constructor is to be used when you want the latest version of the file.
+        filename = string(f);
+        lines = NULL;
+        commitVersion[0] = c[0];
+        commitVersion[1] = c[1];
+        commitVersion[2] = '\0';
+        int cv = VersionManager::convertCharToInt(commitVersion);
+        
+        int i = 0;
+
+        while (i <= cv)
+        {
+            string p = current_path().string();
+
+            p += "/.beanVC/objects/";
+
+            if (i < 10)
+            {
+                p.push_back('0');
+            }
+
+            p += to_string(i);
+            p += ".bin";
+
+            ifstream file = ifstream(p, ios_base::in);
+            vector<string> currentCommitContent;
+            string line;
+            
+            while (getline(file, line))
+            {
+                currentCommitContent.push_back(line);
+            }
+
+            file.close();
+            merge(currentCommitContent);
+            i++;
+        }
+    }
+
     void data(string &writer)
     {
         LineNode *current = lines;
@@ -164,6 +206,10 @@ class FileNode
             throw CorruptedCommitFileError();
         }
 
+        if (fileEndIndex < fileStartIndex)
+        {
+            return ;
+        }
 
         for(int i = fileStartIndex; i <= fileEndIndex; i++)
         {   
@@ -176,7 +222,6 @@ class FileNode
             }
             string trimmedString;
             trim(commitContent[i], trimmedString);
-
             LineNode *current = lines;
             LineNode *prev = NULL;
 
@@ -198,6 +243,7 @@ class FileNode
         }
 
 
+        map<int, int> numLinesAdded;
         for(int i = fileStartIndex; i <= fileEndIndex; i++)
         {
             // code for adding lines
@@ -245,10 +291,11 @@ class FileNode
                 LineNode *prev = NULL;
                 LineNode *temp = new LineNode(trimmedLine);
 
-                while (j < refLine)
+                while (j <= (refLine+numLinesAdded[refLine]))
                 {
                     prev = current;
                     current = current->nextLine;
+                    j++;
                 }
 
                 if (prev == NULL)
@@ -260,6 +307,7 @@ class FileNode
 
                 temp->nextLine = current;
                 prev->nextLine = temp;
+                numLinesAdded[refLine] += 1;
             }
         }
 
@@ -465,8 +513,9 @@ void VersionManager::stageChanges()
             } else {
                 // first we find the lines that have been deleted.
                 LineNode *current = fileTillPreviousCommit.lines;  
+                LineNode *prev = NULL;
                 int i = 1;
-                
+
                 stagingFile.write("--START--\n", 10);
                 stagingFile.write(filename.c_str(), filename.size());
                 stagingFile.write("\n", 1);
@@ -491,14 +540,24 @@ void VersionManager::stageChanges()
 
                     if (isDeleted)
                     {
+                        if (prev == NULL)
+                        {
+                            fileTillPreviousCommit.lines = current->nextLine;
+                            current = current->nextLine;
+                        } else { 
+                            prev->nextLine = current->nextLine;
+                            current = current->nextLine;
+                        }
                         stagingFile.write("(", 1);
                         stagingFile.write(to_string(i).c_str(), to_string(i).size());
                         stagingFile.write(")", 1);
                         stagingFile.write("-", 1);
                         stagingFile.write(sentence.c_str(), sentence.size());
+                        stagingFile.write("\n", 1);
+                    } else {
+                        prev = current;
+                        current = current->nextLine;
                     }
-
-                    current = current->nextLine;
                     i++;
                 }
 
@@ -538,6 +597,7 @@ void VersionManager::stageChanges()
                         stagingFile.write(")", 1);
                         stagingFile.write("+", 1);
                         stagingFile.write(line.c_str(), line.size());
+                        stagingFile.write("\n", 1);
                     }
                 }
 
@@ -668,8 +728,9 @@ int main(int argc, char *argv[])
         VersionManager::commitStagedChanges(message);
     } else if (argument == "show")
     {
+        char *cv = argv[2];
         string d;
-        FileNode f = FileNode("todo.txt");
+        FileNode f = FileNode("todo.txt", cv);
         
         f.data(d);
 
