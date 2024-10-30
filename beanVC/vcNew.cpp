@@ -406,13 +406,6 @@ int VersionManager::checkDuplicatedNewLine(LineNode* node, const char* filename,
     // duplicated.
     // return 1 if it is a new line
     // return 0 if it is not a new line
-    int isTestFile = 0;
-    if (string(filename) == string("test.txt"))
-    {
-        cout << endl << endl << lineNumber << endl;
-        isTestFile = 1;
-    }
-
     int i = 1;
     string line;
     LineNode *current = node;
@@ -420,23 +413,8 @@ int VersionManager::checkDuplicatedNewLine(LineNode* node, const char* filename,
     while (i <= lineNumber)
     {
         getline(file, line);
-        if (isTestFile)
-        {
-            cout << "In FileNode: " << current->data << endl;
-            cout << "In file:" << line << endl;
-        }
         if (line != current->data) 
         {
-            // if (isTestFile)
-            // {
-            //     LineNode *c = node;
-            //     while (c != NULL)
-            //     {
-            //         cout << c->data << endl;
-            //         c = c->nextLine;
-            //     }
-            //     cout << "-----" << endl;
-            // }
             file.close();
             return i;
         }
@@ -576,6 +554,10 @@ void VersionManager::stageChanges()
                 currentFile.close();
             } else {
                 // first we find the lines that have been deleted.
+                // Even during deleting we need to ensure that the line that we are checking exists Actually exists and is not
+                // just a false positive due to a duplication
+                // we can use the checkDup function for this, however the usage will be inverse of hpw it worked for adding a new line
+                // if it returns 0, then the line was not deleted, if it returns 1, mismatch was found and the line was deleted
                 LineNode *current = fileTillPreviousCommit.lines;  
                 LineNode *prev = NULL;
                 int i = 1;
@@ -590,14 +572,24 @@ void VersionManager::stageChanges()
                     ifstream currentFile = ifstream(filename.c_str(), ios_base::in);
                     string line;
                     int isDeleted = 1;
+                    int lineNo = 1;
                     while (getline(currentFile, line)) 
                     {
-                        if (line == sentence)
+                        if ((line == sentence) && (lineNo <= i))
                         {
-                            currentFile.close();
-                            isDeleted = 0;
-                            break;
+                            int a = checkDuplicatedNewLine(fileTillPreviousCommit.lines, filename.c_str(), lineNo);
+                            if (!a)
+                            {
+                                currentFile.close();
+                                isDeleted = 0;
+                                break;
+                            } else {
+                                i = a-1;
+                                currentFile.close();
+                                break;
+                            }
                         }
+                        lineNo++;
                     }
 
                     currentFile.close();
@@ -682,13 +674,6 @@ void VersionManager::stageChanges()
                         if (current->data == line && (i > lastMatchIndex))
                         {
                             int a = checkDuplicatedNewLine(fileTillPreviousCommit.lines, filename.c_str(), i);
-                            if (filename == "test.txt") {
-                                // cout << endl;
-                                // cout << line << endl;
-                                // cout << "i: " << i << endl;
-                                // cout << "lastMatchIndex: " << lastMatchIndex << endl;
-                                // cout << endl;
-                            }
                             if (!a)
                             {
                                 lastMatchIndex = i;
@@ -727,14 +712,6 @@ void VersionManager::stageChanges()
                             current = current->nextLine;
                             count++;
                         }
-
-                        // current = fileTillPreviousCommit.lines;
-                        // while(current != NULL)
-                        // {
-                        //     cout << current->data << endl;
-                        //     current = current->nextLine;
-                        // }
-                        // //exit(0);
                         lastMatchIndex++;
                     }
                 }
