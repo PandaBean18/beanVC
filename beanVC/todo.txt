@@ -15,8 +15,8 @@ inspected, lets call this line K. the significance of this is that all the lines
 be right above the Kth line. similarly we check the second newly added line, third and so on except the lines that have been deleted.
 
 NOMENCLATURE:
-lmao
-i edited this
+i added this line 
+this too
 --START--
 <filename>
 

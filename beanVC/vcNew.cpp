@@ -281,10 +281,25 @@ class FileNode
 
                 current->nextLine = temp;
             } else if (refLine == -1) {
-                LineNode *temp = new LineNode(trimmedLine);
+                if (numLinesAdded[-1] == 0) {
+                    LineNode *temp = new LineNode(trimmedLine);
 
-                temp->nextLine = lines;
-                lines = temp;
+                    temp->nextLine = lines;
+                    lines = temp;
+                } else {
+                    int i = 0;
+                    LineNode *current = lines;
+                    LineNode *temp = new LineNode(trimmedLine);
+                    while (i < numLinesAdded[-1]-1)
+                    {
+                        current = current->nextLine;
+                        i++;
+                    }
+
+                    temp->nextLine = current->nextLine;
+                    current->nextLine = temp;
+                }
+                numLinesAdded[-1] += 1;
             } else {
                 int j = 1;
                 LineNode *current = lines;
@@ -648,9 +663,30 @@ void VersionManager::commitStagedChanges(const char* m)
     }
 
     string line;
-
+    int filesChanged = 0;
+    int linesAdded = 0;
+    int linesDeleted = 0;
+    int fileUpdated = 0;
     while(getline(tempStagingFile, line))
     {
+
+        if (line.find_first_of(')') != string::npos)
+        {
+            fileUpdated = 1;
+            if (line[line.find_first_of(')')+1] == '-')
+            {
+                linesDeleted++;
+            } else {
+                linesAdded++;
+            }
+        }
+
+        if ((line == "--END--") && (fileUpdated))
+        {
+            filesChanged++;
+            fileUpdated = 0;
+        }
+
         stagingFile.write(line.c_str(), line.size());
         stagingFile.write("\n", 1);
     }
@@ -682,6 +718,9 @@ void VersionManager::commitStagedChanges(const char* m)
     logFile.write(commitMessage.c_str(), commitMessage.size());
 
     logFile.close();
+
+    cout << filesChanged << " files updated, " << linesAdded << " lines added(+) and " << linesDeleted << " lines deleted(-)." << endl;
+
 }
 
 void VersionManager::incrementCommitVersion()
@@ -730,7 +769,7 @@ int main(int argc, char *argv[])
     {
         char *cv = argv[2];
         string d;
-        FileNode f = FileNode("todo.txt", cv);
+        FileNode f = FileNode("test.txt", cv);
         
         f.data(d);
 
