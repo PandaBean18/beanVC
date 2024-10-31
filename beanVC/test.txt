@@ -7,12 +7,6 @@ int add(int a, int b)
     return (a+b);
 }
 
-int substract(int a, int b)
-{
-    // we will remove this function in the next commit 
-    return (a-b);
-}
-
 int main()
 {
     cout << "hello world" << endl;

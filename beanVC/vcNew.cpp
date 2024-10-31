@@ -224,22 +224,17 @@ class FileNode
             trim(commitContent[i], trimmedString);
             LineNode *current = lines;
             LineNode *prev = NULL;
+            string refLineString = commitContent[i].substr(commitContent[i].find_first_of('(')+1, commitContent[i].find_first_of(')')-1);
+            int refLine = VersionManager::convertCharToInt(refLineString.c_str());
+            int a = 1;
 
-            while (current != NULL)
+            while (a != refLine)
             {
-                if (current->data == trimmedString)
-                {
-                    if (prev == NULL)
-                    {
-                        lines = lines->nextLine;
-                    } else {
-                        prev->nextLine = current->nextLine;
-                    }
-                    break;
-                }
-                prev = current;
                 current = current->nextLine;
+                a++;
             }
+
+            current->nextLine = current->nextLine->nextLine;
         }
 
 
@@ -554,69 +549,80 @@ void VersionManager::stageChanges()
                 currentFile.close();
             } else {
                 // first we find the lines that have been deleted.
-                // Even during deleting we need to ensure that the line that we are checking exists Actually exists and is not
-                // just a false positive due to a duplication
-                // we can use the checkDup function for this, however the usage will be inverse of hpw it worked for adding a new line
-                // if it returns 0, then the line was not deleted, if it returns 1, mismatch was found and the line was deleted
-                LineNode *current = fileTillPreviousCommit.lines;  
-                LineNode *prev = NULL;
+                // inorder to find the chunks that have been deleted, we take the data of fileNode and then scan each line of currentFile
+                // we take the current line and then check the fileNode from starting line. If the match of the line is found, two cases
+                // are possible:
+                // 1. the node at which the match is found is the next node of the node with which we started 
+                // 2. the node at which the match is found is not the next node of the node at which we started
+                // if it is case 2, we assume that the lines from startingNode to matchedNode (both exclusive) have been deleted.
+                // there is another case which is that we fo not find the line that we were searching for. this would imply that this
+                // line is newly added in that case we just ignore it.  
+                LineNode *lastMatchedLine = NULL;
+                ifstream file = ifstream(filename.c_str(), ios_base::in);
+                string currentLine;
                 int i = 1;
 
                 stagingFile.write("--START--\n", 10);
                 stagingFile.write(filename.c_str(), filename.size());
                 stagingFile.write("\n", 1);
 
-                while (current != NULL)
+                while (getline(file, currentLine))
                 {
-                    string sentence = current->data;
-                    ifstream currentFile = ifstream(filename.c_str(), ios_base::in);
-                    string line;
-                    int isDeleted = 1;
-                    int lineNo = 1;
-                    while (getline(currentFile, line)) 
-                    {
-                        if ((line == sentence) && (lineNo <= i))
-                        {
-                            int a = checkDuplicatedNewLine(fileTillPreviousCommit.lines, filename.c_str(), lineNo);
-                            if (!a)
-                            {
-                                currentFile.close();
-                                isDeleted = 0;
-                                break;
-                            } else {
-                                i = a-1;
-                                currentFile.close();
-                                break;
-                            }
-                        }
-                        lineNo++;
-                    }
+                    LineNode *current = NULL;
 
-                    currentFile.close();
-
-                    if (isDeleted)
+                    if (lastMatchedLine == NULL)
                     {
-                        if (prev == NULL)
-                        {
-                            fileTillPreviousCommit.lines = current->nextLine;
-                            current = current->nextLine;
-                        } else { 
-                            prev->nextLine = current->nextLine;
-                            current = current->nextLine;
-                        }
-                        stagingFile.write("(", 1);
-                        stagingFile.write(to_string(i).c_str(), to_string(i).size());
-                        stagingFile.write(")", 1);
-                        stagingFile.write("-", 1);
-                        stagingFile.write(sentence.c_str(), sentence.size());
-                        stagingFile.write("\n", 1);
+                        current = fileTillPreviousCommit.lines;
                     } else {
-                        prev = current;
+                        current = lastMatchedLine;
+                    }
+                    int j = i;
+                    while (current != NULL)
+                    {
+
+                        if (current->data == currentLine)
+                        {
+                            if (lastMatchedLine == NULL)
+                            {
+                                LineNode *node = fileTillPreviousCommit.lines;
+                                int diff = j-i;
+                                while (node != current)
+                                {
+                                    string s = to_string(j-diff);
+                                    stagingFile.write("(", 1);
+                                    stagingFile.write(s.c_str(), s.size());
+                                    stagingFile.write(")-", 2);
+                                    stagingFile.write(node->data.c_str(), node->data.size());
+                                    stagingFile.write("\n", 1);
+                                    node = node->nextLine;
+                                }
+                                fileTillPreviousCommit.lines = current;
+                            } else if (current != lastMatchedLine) {
+                                // if this is the case, we start at lastMatchedLine->nextLine, till node->nextLine == current, and
+                                // put all those lines as deleted in our staging file. 
+                                LineNode *node = lastMatchedLine->nextLine;
+                                int diff = j-i;
+                                while (node != current)
+                                {
+                                    string s = to_string(j-diff);
+                                    stagingFile.write("(", 1);
+                                    stagingFile.write(s.c_str(), s.size());
+                                    stagingFile.write(")-", 2);
+                                    stagingFile.write(node->data.c_str(), node->data.size());
+                                    stagingFile.write("\n", 1);
+                                    node = node->nextLine;
+                                } 
+                                lastMatchedLine->nextLine = current;
+                            }
+                            lastMatchedLine = current;
+                            i = j;
+                            break;
+                        }
+                        j++;
                         current = current->nextLine;
                     }
-                    i++;
                 }
-
+                file.close();
                 // now that the deleted lines have been added, we check the newly added lines
                 // for this we do the opposite of what we did for deleting
                 // we check each line of the file and then check if that exists in fileNode
