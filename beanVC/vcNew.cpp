@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <fstream>
 #include <map>
+#include <chrono>
 
 #include "versionManager.h"
 
@@ -44,6 +45,15 @@ class MissingCommitMessageError : public exception
     const char* what() const noexcept override 
     {
         return "A commit message is required";
+    }
+};
+
+class FileNotFoundError : public exception 
+{
+    public: 
+    const char* what() const noexcept override 
+    {
+        return "The file that was requested was not found in the directory. Incase this error was thrown during rollback command please check filename.\n";
     }
 };
 
@@ -141,6 +151,11 @@ class FileNode
             ifstream file = ifstream(p, ios_base::in);
             vector<string> currentCommitContent;
             string line;
+
+            if (!exists(path(p)))
+            {
+                throw FileNotFoundError();
+            }
             
             while (getline(file, line))
             {
@@ -335,6 +350,16 @@ class FileNode
 
         return;
     }
+
+    static time_t findLastWriteTime(const char* filePath)
+    {
+        path pathToFile = path(filePath);
+        const auto t = filesystem::last_write_time(pathToFile);
+        const auto tp = chrono::time_point_cast<chrono::system_clock::duration>(t - file_time_type::clock::now() + chrono::system_clock::now());
+
+        time_t val = chrono::system_clock::to_time_t(tp);
+        return val;
+    }
 };
 
 
@@ -352,6 +377,36 @@ void VersionManager::findLatestCommitVersion(char* c)
     lastCommitVersionFile.read(c, 2);
     lastCommitVersionFile.close();
     return;
+}
+
+time_t VersionManager::findLastCommitTime()
+{
+    char c[2];
+    VersionManager::findLatestCommitVersion(c);
+    string filename = "/.beanVC/logs/";
+    filename.push_back(c[0]);
+    filename.push_back(c[1]);
+    filename += "_log.txt";
+
+    string path = current_path().string() + filename;
+    ifstream logFile = ifstream(path, ios_base::in);
+    string line;
+
+    getline(logFile, line);
+    time_t t = 0;
+    
+    for(string::iterator it = line.begin(); it != line.end(); it++)
+    {
+        if (*it == ' ' || *it == '\n') 
+        {
+            continue;
+        }
+        int c = *it - '0';
+        t *= 10;
+        t += c;
+    }
+
+    return t;
 }
 
 int VersionManager::convertCharToInt(const char* c)
@@ -384,13 +439,18 @@ int VersionManager::convertCharToInt(const char* c)
 void VersionManager::initialize()
 {
     path pathname = current_path();
-    cout << "Initializing empty repository in " << pathname << "..." << endl;
     create_directory(".beanVC");
     create_directory(".beanVC/logs");
     create_directory(".beanVC/objects");
     ofstream lastComitVersion = ofstream(".beanVC/lastCommitVersion.txt", ios_base::out);
     lastComitVersion.write("-1", 2);
     lastComitVersion.close();
+    cout << "Initialized empty repository in " << pathname << "..." << endl << endl; 
+    cout << "beanVC is a small scale version control management system that is built as a mini clone of git." << endl;
+    cout << "It uses delta comparisons to find changes that have been made from one version of the file to the next." << endl;
+    cout << "This project uses a lineNode, a node that represents a sentence. A file is represented as linkedList of lineNodes." << endl;
+    cout << "A directory is considered to be a multi list with multiple files." << endl;
+    cout << "run `./vc help` to see list of commands." << endl;
     return;
 }
 
@@ -427,6 +487,10 @@ void VersionManager::stageChanges()
     findLatestCommitVersion(c);
     int commitVersion = convertCharToInt(c);
     recursive_directory_iterator it = recursive_directory_iterator(current_path());
+    string lastCommitLog = "/logs/";
+    lastCommitLog += string(c);
+    lastCommitLog += "_log.txt";
+    ifstream lastCommitLogFile = ifstream(lastCommitLog.c_str(), ios_base::in);
 
     if (commitVersion == -1)
     {
@@ -454,6 +518,10 @@ void VersionManager::stageChanges()
             if (filename.find_first_of(".", 1) == string::npos && (status(it->path()).type() != file_type::directory))
             {
                 it++;
+                if (it == e)
+                {
+                    stop = 1;
+                } 
                 continue;
             }
 
@@ -485,7 +553,7 @@ void VersionManager::stageChanges()
             if (it == e)
             {
                 stop = 1;
-            }
+            } 
         }
     } else {
         // if it is not the first commit then we take the file name and create a fileNode of that file
@@ -498,6 +566,7 @@ void VersionManager::stageChanges()
         recursive_directory_iterator e = end(it);
         int stop = 0;
         ofstream stagingFile = ofstream(".beanVC/objects/tempStaging.bin", ios_base::out);
+        time_t lastCommitTime = VersionManager::findLastCommitTime();
 
         while (!stop)
         {
@@ -512,18 +581,37 @@ void VersionManager::stageChanges()
                     continue;
                 }
                 it++;
+                if (it == e)
+                {
+                    stop = 1;
+                }
                 continue;
             }
 
             if (filename.find_first_of(".", 1) == string::npos && (status(it->path()).type() != file_type::directory))
             {
                 it++;
+                if (it == e)
+                {
+                    stop = 1;
+                }
+                continue;
+            }
+
+            if (FileNode::findLastWriteTime(filename.c_str()) < lastCommitTime) 
+            {
+                it++;
+                if (it == e)
+                {
+                    stop = 1;
+                }
                 continue;
             }
 
             cout << "Adding Contents of " << filename << endl;
 
             FileNode fileTillPreviousCommit = FileNode(filename.c_str());
+
 
             if (fileTillPreviousCommit.lines == NULL)
             {
@@ -829,6 +917,80 @@ void VersionManager::commitStagedChanges(const char* m)
 
 }
 
+void VersionManager::rollback(const char *filename, const char *cv)
+{
+    string d;
+    FileNode f = FileNode(filename, cv);
+        
+    f.data(d);
+
+    ofstream file = ofstream(filename, ios_base::out);
+
+    file.write(d.c_str(), d.size());
+}
+
+void VersionManager::showStatus()
+{
+    char c[2];
+
+    VersionManager::findLatestCommitVersion(c);
+
+    int i = 0;
+    int cv = VersionManager::convertCharToInt(c);
+
+    while (i <= cv) 
+    {
+        string p = current_path().string();
+        p += "/.beanVC/logs/";
+
+        if (i < 10) 
+        {
+            p.push_back('0');
+        }
+
+        p += to_string(i);
+        p += "_log.txt";
+
+        string t;
+        string m;
+
+        ifstream logfile = ifstream(p, ios_base::in);
+        getline(logfile, t);
+        getline(logfile, m);
+
+        time_t time = 0;
+    
+        for(string::iterator it = t.begin(); it != t.end(); it++)
+        {
+            if (*it == ' ' || *it == '\n') 
+            {
+                continue;
+            }
+            int c = *it - '0';
+            time *= 10;
+            time += c;
+        }
+
+        cout << "Commit Version: " << i << endl;
+        cout << "Commit message: " << m << endl;
+        tm* local_time = localtime(&time);
+
+        // Use std::put_time to format and print the time
+        cout << "Time: " << put_time(local_time, "%Y-%m-%d %H:%M:%S") << endl << endl << endl;
+        i++;
+    }
+}
+
+void VersionManager::help()
+{
+    cout << "Command: init" << endl << "Usage: Initializes an empty beanVC repository." << endl << "Syntax: `./vc init`" << endl << endl;
+    cout << "Command: add" << endl << "Usage: Used to stage files for committing." << endl << "Syntax: `./vc add`" << endl << endl;
+    cout << "Command: commit" << endl << "Usage: Used to commit staged files." << endl << "Syntax: `./vc commit <commitMessage>`" << endl << endl;
+    cout << "Command: log" << endl << "Usage: Used to view all the commit messages along with their version and datetime." << endl << "Syntax: `./vc log`" << endl << endl;
+    cout << "Command: show" << endl << "Usage: Used to view the condition of file in a particular commit version." << endl << "Syntax: `./vc show`" << endl << endl;
+    cout << "Command: rollback" << endl << "Usage: Used to rollback a file to one of its previous commit versions." << endl << "Syntax: `./vc rollback <filename> <commitVersion>`" << endl << endl;
+}
+
 void VersionManager::incrementCommitVersion()
 {
     char c[2];
@@ -875,11 +1037,25 @@ int main(int argc, char *argv[])
     {
         char *cv = argv[2];
         string d;
-        FileNode f = FileNode("test.txt", cv);
+        FileNode f = FileNode("test.py", cv);
         
         f.data(d);
 
         cout << d << endl;
+
+        cout << FileNode::findLastWriteTime("test.py") << endl; 
+    } else if (argument == "rollback")
+    {
+        char *filename = argv[2];
+        char *cv = argv[3];
+
+        VersionManager::rollback(filename, cv);
+        
+    } else if (argument == "log") 
+    {
+        VersionManager::showStatus();
+    } else if (argument == "help") {
+        VersionManager::help();
     }
     return 0;
 }
